@@ -7,6 +7,7 @@
 // PARAMETERS --------------------------------------------------------
 struct OptParams {
     Eigen::VectorXd initial_guess;
+    //@note use in-class initialization to have defaults and avoid uninitialized variables
     double epsilon_r;
     double epsilon_s;
     int max_iterations;
@@ -34,7 +35,7 @@ public:
     }
 
     virtual void set_x(const Eigen::VectorXd& x) {
-        // Do nothing
+        // Do nothing @note: only used in ArmijoDecay, good practice to have it here
     }
 };
 
@@ -42,7 +43,7 @@ public:
 class NoDecay : public LearningRateDecay {
 public:
     NoDecay() = default;
-    NoDecay(const DecayParams& dec_params) : LearningRateDecay(dec_params) {}
+    NoDecay(const DecayParams& dec_params) : LearningRateDecay(dec_params) {} //@note the the habit of using {} instead of () to initialize
     double computeStepSize(int iteration) override {
         return dec_params.alpha0;
     }
@@ -93,7 +94,7 @@ public:
                const std::function<Eigen::VectorXd(const Eigen::VectorXd&)>& grad_f) 
                : LearningRateDecay(dec_params), f(f), grad_f(grad_f) {}
 
-    double computeStepSize(int iteration) override {
+    double computeStepSize(int iteration) override { //@note are you sure should not be const?
         double f_x = f(x);
         Eigen::VectorXd grad = grad_f(x);
         double norm = grad.norm();
@@ -104,6 +105,9 @@ public:
         
         // Sufficent decrease condition
         while (f_x - f(x - alpha_temp * grad) < decrease_threshold) {
+            //@note You should have a maximum number of iterations here to avoid infinite loops
+            //Armijo should converge provided the function is continuous with Lipschitz gradient
+            // but becouse of roundoff errors, it might not converge in practice in some nasty situations.
             alpha_temp *= 0.5;
             decrease_threshold = dec_params.sigma * alpha_temp * norm*norm;
             }
@@ -128,11 +132,12 @@ protected:
     OptParams opt_params;
     Eigen::VectorXd x;
 
-    std::shared_ptr<LearningRateDecay> lr_decay = nullptr;
+    std::shared_ptr<LearningRateDecay> lr_decay = nullptr; //@note why not unique?
     
     bool checkConvergence(const Eigen::VectorXd& new_x, const Eigen::VectorXd& x,
                           const double epsilon_r, const double epsilon_s,
-                          const double f_new, const double f_x) {
+                          const double f_new, const double f_x) { //@note here const is certainly needed
+                          //@note actually this method can also be made static. It does not need to access any member variables
         return ((new_x - x).norm() < epsilon_s || std::abs(f_new - f_x) < epsilon_r);
     }
 
@@ -174,11 +179,13 @@ protected:
         if (lr_decay->getName() == "ArmijoDecay") {
             std::cout << "Invalid strategy (Armijo Rule) for Momentum methods.\n" 
                       << "Setting the default constant learning rate.\n" << std::endl;
+    //@note In fact, you could still use armijio rule with momentum, but you have to verify if the direction
+    // is a descent direction. If not, you should reset the momentum to zero. This is a bit more complicated
             lr_decay = std::make_unique<NoDecay>(lr_decay->getDecayParams());
         }
     }
 
-    double eta = 0.9; // Momentum parameter
+    double eta = 0.9; // Momentum parameter //@note better have a method that sets this parameter in case you want to change it 
 public:
     Momentum() = default;
     Momentum(const std::function<double(const Eigen::VectorXd&)>& f,
